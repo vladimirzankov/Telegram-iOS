@@ -995,6 +995,7 @@ class ChatListItemNode: ItemListRevealOptionsItemNode {
     
     private var onlineIsVoiceChat: Bool = false
     private var currentOnline: Bool?
+    private var isBeingDeactivated: Bool = false
     
     override var canBeSelected: Bool {
         if self.selectableControlNode != nil || self.item?.editing == true {
@@ -1317,6 +1318,22 @@ class ChatListItemNode: ItemListRevealOptionsItemNode {
             let avatarTapRecognizer = UITapGestureRecognizer(target: self, action: #selector(self.avatarStoryTapGesture(_:)))
             self.avatarTapRecognizer = avatarTapRecognizer
             self.avatarNode.view.addGestureRecognizer(avatarTapRecognizer)
+        }
+        
+        self.contextContainer.customActivationProgress = { [weak self] progress, _ in
+            guard let self, let item, progress != 0 || !self.isBeingDeactivated else { return }
+            
+            self.backgroundNode.layer.shadowColor = item.presentationData.theme.chatList.itemSeparatorColor.cgColor
+            self.backgroundNode.layer.shadowOpacity = 1
+            self.backgroundNode.layer.shadowOffset = .zero
+            self.backgroundNode.layer.shadowRadius = 5 * progress
+            if progress == 1 {
+                self.isBeingDeactivated = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    self.backgroundNode.layer.shadowRadius = 0
+                    self.isBeingDeactivated = false
+                }
+            }
         }
     }
     

@@ -211,6 +211,8 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
     
     private var fullScreenEffectView: RippleEffectView?
     
+    private var overlayTransition: ChatListOverlayTransition?
+    
     public override func updateNavigationCustomData(_ data: Any?, progress: CGFloat, transition: ContainedViewLayoutTransition) {
         if self.isNodeLoaded {
             self.chatListDisplayNode.effectiveContainerNode.updateSelectedChatLocation(data: data as? ChatLocation, progress: progress, transition: transition)
@@ -1328,8 +1330,12 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
                             chatController.canReadHistory.set(false)
                             source = .controller(ContextControllerContentSourceImpl(controller: chatController, sourceNode: node, navigationController: strongSelf.navigationController as? NavigationController))
                         }
-                        
-                        let contextController = ContextController(account: strongSelf.context.account, presentationData: strongSelf.presentationData, source: source, items: chatContextMenuItems(context: strongSelf.context, peerId: peer.peerId, promoInfo: promoInfo, source: .chatList(filter: strongSelf.chatListDisplayNode.mainContainerNode.currentItemNode.chatListFilter), chatListController: strongSelf, joined: joined) |> map { ContextController.Items(content: .list($0)) }, gesture: gesture)
+                        self?.overlayTransition = ChatListOverlayTransition(source: source, sourceNode: node)
+                        let contextController = ContextController(account: strongSelf.context.account, presentationData: strongSelf.presentationData, source: source, items: chatContextMenuItems(context: strongSelf.context, peerId: peer.peerId, promoInfo: promoInfo, source: .chatList(filter: strongSelf.chatListDisplayNode.mainContainerNode.currentItemNode.chatListFilter), chatListController: strongSelf, joined: joined) |> map { ContextController.Items(content: .list($0)) }, gesture: gesture, animateOverlayIn: { [weak self] in
+                            self?.overlayTransition?.animateIn(contextView: $0, springDuration: $1, springDamping: $2)
+                        }, animateOverlayOut: { [weak self] in
+                            self?.overlayTransition?.animateOut(contextView: $0, transitionDuration: $1)
+                        })
                         strongSelf.presentInGlobalOverlay(contextController)
                     }
                 case let .forum(pinnedIndex, _, threadId, _, _):

@@ -3673,7 +3673,7 @@ open class ListView: ASDisplayNode, UIScrollViewAccessibilityDelegate, UIGesture
         }
     }
     
-    private func updateItemHeaders(leftInset: CGFloat, rightInset: CGFloat, synchronousLoad: Bool, transition: (ContainedViewLayoutTransition, Bool, CGFloat) = (.immediate, false, 0.0), animateInsertion: Bool = false) {        
+    private func updateItemHeaders(leftInset: CGFloat, rightInset: CGFloat, synchronousLoad: Bool, transition: (ContainedViewLayoutTransition, Bool, CGFloat) = (.immediate, false, 0.0), animateInsertion: Bool = false) {
         self.assignHeaderSpaceAffinities()
 
         let upperDisplayBound = self.headerInsets.top
@@ -4549,7 +4549,7 @@ open class ListView: ASDisplayNode, UIScrollViewAccessibilityDelegate, UIGesture
                         }
                         
                         if canBeSelectedOrLongTapped {
-                            strongSelf.highlightedItemIndex = index
+//                            strongSelf.highlightedItemIndex = index
                             for itemNode in strongSelf.itemNodes {
                                 let itemNodeFrame = itemNode.frame
                                 let itemNodeBounds = itemNode.bounds
@@ -4573,7 +4573,7 @@ open class ListView: ASDisplayNode, UIScrollViewAccessibilityDelegate, UIGesture
                                             }
                                         }
                                         if strongSelf.items[index].selectable {
-                                            itemNode.setHighlighted(true, at: itemPoint, animated: false)
+//                                            itemNode.setHighlighted(true, at: itemPoint, animated: false)
                                         }
                                         
                                         if itemNode.canBeLongTapped {

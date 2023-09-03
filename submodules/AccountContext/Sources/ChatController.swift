@@ -671,6 +671,8 @@ public protocol ChatController: ViewController {
     
     var isSelectingMessagesUpdated: ((Bool) -> Void)? { get set }
     func cancelSelectingMessages()
+    
+    func findTitleView() -> UIView?
 }
 
 public protocol ChatMessagePreviewItemNode: AnyObject {

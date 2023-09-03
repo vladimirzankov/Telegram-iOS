@@ -242,6 +242,8 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
     fileprivate var dismissedForCancel: (() -> Void)?
     private let getController: () -> ContextControllerProtocol?
     private weak var gesture: ContextGesture?
+    private let animateOverlayIn: ((UIView, CGFloat, CGFloat) -> Void)?
+    private let animateOverlayOut: ((UIView, CGFloat) -> Void)?
         
     private var didSetItemsReady = false
     let itemsReady = Promise<Bool>()
@@ -267,6 +269,7 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
     private let scrollNode: ASScrollNode
     
     private var originalProjectedContentViewFrame: (CGRect, CGRect)?
+    private var contentContainerNodeSize: CGSize!
     private var contentAreaInScreenSpace: CGRect?
     private var customPosition: CGPoint?
     private let contentContainerNode: ContextContentContainerNode
@@ -305,7 +308,9 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
         recognizer: TapLongTapOrDoubleTapGestureRecognizer?,
         gesture: ContextGesture?,
         beganAnimatingOut: @escaping () -> Void,
-        attemptTransitionControllerIntoNavigation: @escaping () -> Void
+        attemptTransitionControllerIntoNavigation: @escaping () -> Void,
+        animateOverlayIn: ((UIView, CGFloat, CGFloat) -> Void)? = nil,
+        animateOverlayOut: ((UIView, CGFloat) -> Void)? = nil
     ) {
         self.presentationData = presentationData
         self.source = source
@@ -314,6 +319,8 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
         self.beganAnimatingOut = beganAnimatingOut
         self.attemptTransitionControllerIntoNavigation = attemptTransitionControllerIntoNavigation
         self.gesture = gesture
+        self.animateOverlayIn = animateOverlayIn
+        self.animateOverlayOut = animateOverlayOut
         
         self.getController = { [weak controller] in
             return controller
@@ -959,7 +966,7 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                 
                 extracted.willUpdateIsExtractedToContextPreview?(true, .animated(duration: 0.2, curve: .easeInOut))
             case .controller:
-                let springDuration: Double = 0.52 * animationDurationFactor
+                let springDuration: Double = 1.0 * animationDurationFactor
                 let springDamping: CGFloat = 110.0
                 
                 self.actionsContainerNode.layer.animateAlpha(from: 0.0, to: 1.0, duration: 0.2 * animationDurationFactor)
@@ -972,31 +979,15 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                 if let originalProjectedContentViewFrame = self.originalProjectedContentViewFrame {
                     let localSourceFrame = self.view.convert(CGRect(origin: CGPoint(x: originalProjectedContentViewFrame.1.minX, y: originalProjectedContentViewFrame.1.minY), size: CGSize(width: originalProjectedContentViewFrame.1.width, height: originalProjectedContentViewFrame.1.height)), to: self.scrollNode.view)
                     
-                    self.contentContainerNode.layer.animateSpring(from: min(localSourceFrame.width / self.contentContainerNode.frame.width, localSourceFrame.height / self.contentContainerNode.frame.height) as NSNumber, to: 1.0 as NSNumber, keyPath: "transform.scale", duration: springDuration, initialVelocity: 0.0, damping: springDamping)
+                    animateOverlayIn?(self.view, springDuration, springDamping)
                     
-                    switch self.source {
-                    case let .controller(controller):
-                        controller.animatedIn()
-                    default:
-                        break
-                    }
-                    
-                    let contentContainerOffset = CGPoint(x: localSourceFrame.center.x - self.contentContainerNode.frame.center.x, y: localSourceFrame.center.y - self.contentContainerNode.frame.center.y)
-                    if let contentNode = self.contentContainerNode.contentNode, case let .controller(controller) = contentNode {
-                        let snapshotView: UIView? = nil// controller.sourceNode.view.snapshotContentTree()
-                        if let snapshotView = snapshotView {
-                            controller.sourceView.isHidden = true
-                            
-                            self.view.insertSubview(snapshotView, belowSubview: self.contentContainerNode.view)
-                            snapshotView.layer.animateSpring(from: NSValue(cgPoint: localSourceFrame.center), to: NSValue(cgPoint: CGPoint(x: self.contentContainerNode.frame.midX, y: self.contentContainerNode.frame.minY + localSourceFrame.height / 2.0)), keyPath: "position", duration: springDuration, initialVelocity: 0.0, damping: springDamping, removeOnCompletion: false)
-                            //snapshotView.layer.animateSpring(from: 1.0 as NSNumber, to: (self.contentContainerNode.frame.width / localSourceFrame.width) as NSNumber, keyPath: "transform.scale", duration: springDuration, initialVelocity: 0.0, damping: springDamping, removeOnCompletion: false)
-                            snapshotView.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.2 * animationDurationFactor, removeOnCompletion: false, completion: { [weak snapshotView] _ in
-                                snapshotView?.removeFromSuperview()
-                            })
-                        }
-                    }
-                    self.actionsContainerNode.layer.animateSpring(from: NSValue(cgPoint: CGPoint(x: localSourceFrame.center.x - self.actionsContainerNode.position.x, y: localSourceFrame.center.y - self.actionsContainerNode.position.y)), to: NSValue(cgPoint: CGPoint()), keyPath: "position", duration: springDuration, initialVelocity: 0.0, damping: springDamping, additive: true)
+                    let contentContainerOffset = CGPoint(x: localSourceFrame.center.x - self.contentContainerNode.frame.center.x + self.contentContainerNode.frame.minX, y: localSourceFrame.center.y - self.contentContainerNode.frame.center.y)
+                    self.actionsContainerNode.layer.animateSpring(from: NSValue(cgPoint: CGPoint(x: localSourceFrame.origin.x - self.actionsContainerNode.position.x, y: localSourceFrame.maxY - self.actionsContainerNode.position.y + 4.33)), to: NSValue(cgPoint: CGPoint()), keyPath: "position", duration: springDuration, initialVelocity: 0.0, damping: springDamping, additive: true)
                     self.contentContainerNode.layer.animateSpring(from: NSValue(cgPoint: contentContainerOffset), to: NSValue(cgPoint: CGPoint()), keyPath: "position", duration: springDuration, initialVelocity: 0.0, damping: springDamping, additive: true, completion: { [weak self] _ in
+                        self?.animatedIn = true
+                    })
+                    
+                    self.contentContainerNode.layer.animateSpring(from: NSValue(cgSize: CGSize(width: localSourceFrame.width, height: localSourceFrame.height)), to:  NSValue(cgSize: CGSize(width: self.contentContainerNodeSize.width, height: self.contentContainerNodeSize.height)), keyPath: "bounds.size", duration: springDuration, initialVelocity: 0.0, damping: springDamping, additive: false, completion: { [weak self] _ in
                         self?.animatedIn = true
                     })
                 }
@@ -1035,7 +1026,7 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
             return
         }
         
-        var transitionDuration: Double = 0.2
+        var transitionDuration: Double = 0.33
         var transitionCurve: ContainedViewLayoutTransitionCurve = .easeInOut
         
         var result = initialResult
@@ -1388,7 +1379,7 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                         intermediateCompletion()
                     })
                 }
-                self.effectView.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.05 * animationDurationFactor, delay: 0.15, timingFunction: CAMediaTimingFunctionName.easeInEaseOut.rawValue, removeOnCompletion: false)
+                self.effectView.layer.animateAlpha(from: 1.0, to: 0.0, duration: animationDurationFactor, timingFunction: CAMediaTimingFunctionName.easeInEaseOut.rawValue, removeOnCompletion: false)
             } else {
                 UIView.animate(withDuration: 0.21 * animationDurationFactor, animations: {
                     if #available(iOS 9.0, *) {
@@ -1407,14 +1398,13 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
             } else {
                 self.withoutBlurDimNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: transitionDuration * animationDurationFactor, removeOnCompletion: false)
             }
-            self.actionsContainerNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.2 * animationDurationFactor, removeOnCompletion: false, completion: { _ in
+            self.actionsContainerNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: transitionDuration * animationDurationFactor / 2, removeOnCompletion: false, completion: { _ in
                 completedActionsNode = true
                 intermediateCompletion()
             })
-            self.contentContainerNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: 0.2 * animationDurationFactor, removeOnCompletion: false, completion: { _ in
-            })
-            self.actionsContainerNode.layer.animateScale(from: 1.0, to: 0.1, duration: transitionDuration * animationDurationFactor, timingFunction: transitionCurve.timingFunction, removeOnCompletion: false)
-            self.contentContainerNode.layer.animateScale(from: 1.0, to: 0.01, duration: transitionDuration * animationDurationFactor, timingFunction: transitionCurve.timingFunction, removeOnCompletion: false)
+            self.contentContainerNode.layer.opacity = 0
+            self.contentContainerNode.layer.animateAlpha(from: 1.0, to: 0, duration: transitionDuration * animationDurationFactor, removeOnCompletion: true)
+            animateOverlayOut?(self.view, transitionDuration)
             
             let animateOutToItem: Bool
             switch result {
@@ -1426,8 +1416,8 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
             
             if animateOutToItem, let originalProjectedContentViewFrame = self.originalProjectedContentViewFrame {
                 let localSourceFrame = self.view.convert(CGRect(origin: CGPoint(x: originalProjectedContentViewFrame.1.minX, y: originalProjectedContentViewFrame.1.minY), size: CGSize(width: originalProjectedContentViewFrame.1.width, height: originalProjectedContentViewFrame.1.height)), to: self.scrollNode.view)
-                
-                self.actionsContainerNode.layer.animatePosition(from: CGPoint(), to: CGPoint(x: localSourceFrame.center.x - self.actionsContainerNode.position.x, y: localSourceFrame.center.y - self.actionsContainerNode.position.y), duration: transitionDuration * animationDurationFactor, timingFunction: transitionCurve.timingFunction, removeOnCompletion: false, additive: true)
+                self.actionsContainerNode.layer.animatePosition(from: CGPoint(), to: CGPoint(x: localSourceFrame.minX - self.actionsContainerNode.position.x + self.actionsContainerNode.frame.width / 10, y: localSourceFrame.center.y - self.actionsContainerNode.position.y), duration: transitionDuration * animationDurationFactor, timingFunction: transitionCurve.timingFunction, removeOnCompletion: false, additive: true)
+                self.actionsContainerNode.layer.animateScale(from: 1.0, to: 0.1, duration: transitionDuration * animationDurationFactor)
                 let contentContainerOffset = CGPoint(x: localSourceFrame.center.x - self.contentContainerNode.frame.center.x, y: localSourceFrame.center.y - self.contentContainerNode.frame.center.y)
                 self.contentContainerNode.layer.animatePosition(from: CGPoint(), to: contentContainerOffset, duration: transitionDuration * animationDurationFactor, timingFunction: transitionCurve.timingFunction, removeOnCompletion: false, additive: true, completion: { [weak self] _ in
                     completedContentNode = true
@@ -1436,6 +1426,7 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                     }
                     intermediateCompletion()
                 })
+                self.contentContainerNode.layer.animateHeight(from: self.contentContainerNode.frame.height, to: localSourceFrame.height, duration: transitionDuration * animationDurationFactor, timingFunction: transitionCurve.timingFunction)
             } else {
                 if let contentNode = self.contentContainerNode.contentNode, case let .controller(controller) = contentNode {
                     controller.sourceView.isHidden = false
@@ -1446,7 +1437,8 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                 }
                 
                 self.contentContainerNode.allowsGroupOpacity = true
-                self.contentContainerNode.layer.animateAlpha(from: 1.0, to: 0.0, duration: transitionDuration * animationDurationFactor, removeOnCompletion: false, completion: { _ in
+                self.contentContainerNode.alpha = 0
+                self.contentContainerNode.layer.animateAlpha(from: 1.0, to: 0, duration: transitionDuration * animationDurationFactor, removeOnCompletion: true, completion: { _ in
                     completedContentNode = true
                     intermediateCompletion()
                 })
@@ -1634,7 +1626,7 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
         transition.updateFrame(node: self.scrollNode, frame: CGRect(origin: CGPoint(), size: layout.size))
         
         let actionsSideInset: CGFloat = layout.safeInsets.left + 12.0
-        let contentTopInset: CGFloat = max(11.0, layout.statusBarHeight ?? 0.0)
+        let contentTopInset: CGFloat = max(11.0, layout.statusBarHeight ?? 0.0) + 4.33
 
         let actionsBottomInset: CGFloat = 11.0
         
@@ -1942,6 +1934,7 @@ private final class ContextControllerNode: ViewControllerTracingNode, UIScrollVi
                     
                     self.contentContainerNode.updateLayout(size: contentUnscaledSize, scaledSize: contentSize, transition: transition)
                     
+                    contentContainerNodeSize = CGSize(width: floor(contentUnscaledSize.width * contentScale), height: floor(contentUnscaledSize.height * contentScale))
                     let maximumActionsFrameOrigin = max(60.0, layout.size.height - layout.intrinsicInsets.bottom - actionsBottomInset - actionsSize.height)
                     var originalActionsFrame: CGRect
                     var originalContentFrame: CGRect
@@ -2520,7 +2513,10 @@ public final class ContextController: ViewController, StandalonePresentableContr
     
     public var getOverlayViews: (() -> [UIView])?
     
-    public init(account: Account, presentationData: PresentationData, source: ContextContentSource, items: Signal<ContextController.Items, NoError>, recognizer: TapLongTapOrDoubleTapGestureRecognizer? = nil, gesture: ContextGesture? = nil, workaroundUseLegacyImplementation: Bool = false) {
+    private let animateOverlayIn: ((UIView, CGFloat, CGFloat) -> Void)?
+    private let animateOverlayOut: ((UIView, CGFloat) -> Void)?
+    
+    public init(account: Account, presentationData: PresentationData, source: ContextContentSource, items: Signal<ContextController.Items, NoError>, recognizer: TapLongTapOrDoubleTapGestureRecognizer? = nil, gesture: ContextGesture? = nil, workaroundUseLegacyImplementation: Bool = false, animateOverlayIn: ((UIView, CGFloat, CGFloat) -> Void)? = nil, animateOverlayOut: ((UIView, CGFloat) -> Void)? = nil) {
         self.account = account
         self.presentationData = presentationData
         self.source = source
@@ -2528,6 +2524,8 @@ public final class ContextController: ViewController, StandalonePresentableContr
         self.recognizer = recognizer
         self.gesture = gesture
         self.workaroundUseLegacyImplementation = workaroundUseLegacyImplementation
+        self.animateOverlayIn = animateOverlayIn
+        self.animateOverlayOut = animateOverlayOut
         
         super.init(navigationBarPresentationData: nil)
               
@@ -2616,6 +2614,10 @@ public final class ContextController: ViewController, StandalonePresentableContr
             default:
                 break
             }
+        }, animateOverlayIn: { [weak self] in
+            self?.animateOverlayIn?($0, $1, $2)
+        }, animateOverlayOut: { [weak self] in
+            self?.animateOverlayOut?($0, $1)
         })
         self.controllerNode.dismissedForCancel = self.dismissedForCancel
         self.displayNodeDidLoad()

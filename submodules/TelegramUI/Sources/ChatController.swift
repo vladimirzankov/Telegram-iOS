@@ -287,6 +287,10 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
     
     private var historyStateDisposable: Disposable?
     
+    public func findTitleView() -> UIView? {
+        return self.chatTitleView
+    }
+    
     private let galleryHiddenMesageAndMediaDisposable = MetaDisposable()
     private let temporaryHiddenGalleryMediaDisposable = MetaDisposable()
 
@@ -18790,7 +18794,7 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                     if let themeController = strongSelf.themeScreen {
                         strongSelf.themeScreen = nil
                         themeController.dimTapped()
-                    }                    
+                    }
                     let dismissControllers = { [weak self] in
                         if let self, let navigationController = self.navigationController as? NavigationController {
                             let controllers = navigationController.viewControllers.filter({ controller in

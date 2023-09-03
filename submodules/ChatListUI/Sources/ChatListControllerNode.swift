@@ -855,6 +855,8 @@ public final class ChatListContainerNode: ASDisplayNode, UIGestureRecognizerDele
     private var didSetupContentOffset = false
     private var isSettingUpContentOffset = false
     
+    var unlockArchiveNode: ChatListUnlockArchiveNode!
+    
     private func applyItemNodeAsCurrent(id: ChatListFilterTabEntryId, itemNode: ChatListContainerItemNode) {
         if let previousItemNode = self.currentItemNodeValue {
             previousItemNode.listNode.activateSearch = nil
@@ -979,6 +981,8 @@ public final class ChatListContainerNode: ASDisplayNode, UIGestureRecognizerDele
                     self.tempTopInset = 0.0
                 }
             }
+            
+            unlockArchiveNode.contentOffsetChanged(offset: offset, selfController: self.controller, listNode: itemNode.listNode)
         }
         itemNode.listNode.didBeginInteractiveDragging = { [weak self] listView in
             guard let self else {
@@ -1094,8 +1098,20 @@ public final class ChatListContainerNode: ASDisplayNode, UIGestureRecognizerDele
                 }
             })
         }
+        
+        let _ = (context.account.postbox.preferencesView(keys: [ApplicationSpecificPreferencesKeys.chatArchiveSettings])
+        |> map { view -> Bool in
+            let settings: ChatArchiveSettings = view.values[ApplicationSpecificPreferencesKeys.chatArchiveSettings]?.get(ChatArchiveSettings.self) ?? .default
+            return settings.isHiddenByDefault
+        }
+        |> deliverOnMainQueue).start(next: { [weak self] isHiddenByDefault in
+            guard let strongSelf = self else {
+                return
+            }
+            
+            strongSelf.unlockArchiveNode?.isArchivePinned = !isHiddenByDefault
+        })
     }
-    
     public var activateSearch: (() -> Void)?
     var presentAlert: ((String) -> Void)?
     var present: ((ViewController) -> Void)?
@@ -1122,6 +1138,14 @@ public final class ChatListContainerNode: ASDisplayNode, UIGestureRecognizerDele
     var didBeginSelectingChats: (() -> Void)?
     var canExpandHiddenItems: (() -> Bool)?
     public var displayFilterLimit: (() -> Void)?
+    
+    func didBeginDragging() {
+        unlockArchiveNode.didBeginDragging()
+    }
+    
+    func endedDragging() {
+        unlockArchiveNode.endedDragging()
+    }
     
     public init(context: AccountContext, controller: ChatListControllerImpl?, location: ChatListControllerLocation, chatListMode: ChatListNodeMode = .chatList(appendContacts: true), previewing: Bool, controlsHistoryPreload: Bool, isInlineMode: Bool, presentationData: PresentationData, animationCache: AnimationCache, animationRenderer: MultiAnimationRenderer, filterBecameEmpty: @escaping (ChatListFilter?) -> Void, filterEmptyAction: @escaping (ChatListFilter?) -> Void, secondaryEmptyAction: @escaping () -> Void, openArchiveSettings: @escaping () -> Void) {
         self.context = context
@@ -1197,6 +1221,9 @@ public final class ChatListContainerNode: ASDisplayNode, UIGestureRecognizerDele
         self.view.addGestureRecognizer(panRecognizer)
         
         self.view.layer.addSublayer(self.leftSeparatorLayer)
+        
+        self.unlockArchiveNode = ChatListUnlockArchiveNode()
+        self.addSubnode(unlockArchiveNode)
     }
     
     deinit {
@@ -1632,6 +1659,8 @@ public final class ChatListContainerNode: ASDisplayNode, UIGestureRecognizerDele
         self.panRecognizer?.isEnabled = !isEditing
         
         transition.updateFrame(layer: self.leftSeparatorLayer, frame: CGRect(origin: CGPoint(x: -UIScreenPixel, y: 0.0), size: CGSize(width: UIScreenPixel, height: layout.size.height)))
+        
+        self.unlockArchiveNode?.updateLayout(layout.size)
         
         if let selectedIndex = self.availableFilters.firstIndex(where: { $0.id == self.selectedId }) {
             var validNodeIds: [ChatListFilterTabEntryId] = []
@@ -2427,10 +2456,10 @@ final class ChatListControllerNode: ASDisplayNode, UIGestureRecognizerDelegate {
         
         if listView.isDragging {
             var overscrollSelectedId: EnginePeer.Id?
-            var overscrollHiddenChatItemsAllowed = false
+            mainContainerNode.unlockArchiveNode.overscrollHiddenChatItemsAllowed = false
             if let controller = self.controller, let componentView = controller.chatListHeaderView(), let storyPeerListView = componentView.storyPeerListView() {
                 overscrollSelectedId = storyPeerListView.overscrollSelectedId
-                overscrollHiddenChatItemsAllowed = storyPeerListView.overscrollHiddenChatItemsAllowed
+                mainContainerNode.unlockArchiveNode.overscrollHiddenChatItemsAllowed = storyPeerListView.overscrollHiddenChatItemsAllowed
             }
             
             if let chatListNode = listView as? ChatListNode {
@@ -2459,7 +2488,7 @@ final class ChatListControllerNode: ASDisplayNode, UIGestureRecognizerDelegate {
                         }
                     }
                 } else {
-                    if !overscrollHiddenChatItemsAllowed {
+                    if !mainContainerNode.unlockArchiveNode.overscrollHiddenChatItemsAllowed {
                         var manuallyAllow = false
                         
                         if isPrimary {
@@ -2471,12 +2500,12 @@ final class ChatListControllerNode: ASDisplayNode, UIGestureRecognizerDelegate {
                             manuallyAllow = true
                         }
                         
-                        if manuallyAllow, case let .known(value) = offset, value + listView.tempTopInset <= -40.0 {
-                            overscrollHiddenChatItemsAllowed = true
+                        if manuallyAllow, case let .known(value) = offset, value + listView.tempTopInset <= -100.0 {
+                            mainContainerNode.unlockArchiveNode.overscrollHiddenChatItemsAllowed = true
                         }
                     }
                 
-                    if overscrollHiddenChatItemsAllowed {
+                    if mainContainerNode.unlockArchiveNode.overscrollHiddenChatItemsAllowed {
                         if self.allowOverscrollItemExpansion {
                             let timestamp = CACurrentMediaTime()
                             if let _ = self.currentOverscrollItemExpansionTimestamp {
@@ -2488,7 +2517,7 @@ final class ChatListControllerNode: ASDisplayNode, UIGestureRecognizerDelegate {
                                 self.allowOverscrollItemExpansion = false
                                 
                                 if isPrimary {
-                                    self.mainContainerNode.currentItemNode.revealScrollHiddenItem()
+//                                    self.mainContainerNode.currentItemNode.revealScrollHiddenItem()
                                 } else {
                                     self.inlineStackContainerNode?.currentItemNode.revealScrollHiddenItem()
                                 }
@@ -2527,6 +2556,7 @@ final class ChatListControllerNode: ASDisplayNode, UIGestureRecognizerDelegate {
     }
     
     private func didBeginInteractiveDragging(listView: ListView, isPrimary: Bool) {
+        self.mainContainerNode.didBeginDragging()
         if isPrimary {
             if let chatListNode = listView as? ChatListNode, !chatListNode.hasItemsToBeRevealed() {
                 self.allowOverscrollStoryExpansion = true
@@ -2538,6 +2568,11 @@ final class ChatListControllerNode: ASDisplayNode, UIGestureRecognizerDelegate {
     }
     
     private func endedInteractiveDragging(listView: ListView, isPrimary: Bool) {
+        if mainContainerNode.unlockArchiveNode.overscrollHiddenChatItemsAllowed {
+            self.mainContainerNode.currentItemNode.revealScrollHiddenItem()
+        }
+        self.mainContainerNode.endedDragging()
+        
         if isPrimary {
             self.allowOverscrollStoryExpansion = false
             self.currentOverscrollStoryExpansionTimestamp = nil

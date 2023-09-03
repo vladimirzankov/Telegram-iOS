@@ -179,6 +179,8 @@ public final class ChatListNavigationBar: Component {
         
         private var currentHeaderComponent: ChatListHeaderComponent?
         
+        public var visibleHeight: CGFloat = .zero
+        
         override public init(frame: CGRect) {
             self.backgroundView = BlurredBackgroundView(color: .clear, enableBlur: true)
             self.backgroundView.layer.anchorPoint = CGPoint(x: 0.0, y: 1.0)
@@ -251,7 +253,15 @@ public final class ChatListNavigationBar: Component {
             self.hasDeferredScrollOffset = false
             self.clippedScrollOffset = clippedScrollOffset
             
-            let visibleSize = CGSize(width: currentLayout.size.width, height: max(0.0, currentLayout.size.height - clippedScrollOffset))
+            var resultHeight = currentLayout.size.height - clippedScrollOffset
+            let overscroll = max(0, resultHeight - (currentLayout.size.height + storiesScrollHeight))
+            resultHeight = (resultHeight - overscroll) + overscroll / 6.8
+            if component.storySubscriptions?.items.isEmpty == true {
+                resultHeight = min(resultHeight, currentLayout.size.height)
+            }
+            
+            let visibleSize = CGSize(width: currentLayout.size.width, height: max(0.0, resultHeight))
+            self.visibleHeight = visibleSize.height
             
             let previousHeight = self.separatorLayer.position.y
             
